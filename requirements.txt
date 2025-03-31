@@ -1,0 +1,2 @@
+streamlit
+pandas  # 如果有额外依赖
