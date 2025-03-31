@@ -1,2 +1,5 @@
 streamlit
-pandas  # 如果有额外依赖
+pandas  
+plotly
+requests
+time# 如果有额外依赖
