@@ -1,5 +1,0 @@
-streamlit
-pandas  
-plotly
-requests
-time# 如果有额外依赖
