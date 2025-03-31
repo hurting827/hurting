@@ -4,7 +4,7 @@ import streamlit as st
 import requests
 import plotly.express as px
 import plotly.graph_objects as go
-import cv2
+
 import time
 import os
 from datetime import datetime
