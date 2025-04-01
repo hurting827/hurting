@@ -4,7 +4,7 @@ import streamlit as st
 import requests
 import plotly.express as px
 import plotly.graph_objects as go
-
+import cv2
 import time
 import os
 from datetime import datetime
@@ -13,14 +13,97 @@ from ultralytics import YOLO
 import torch
 import torchvision.transforms as T
 from torchvision.models import resnet50, ResNet50_Weights
-import json
-import base64
-from io import BytesIO
+import random
 import folium
-
 
 # 配置DeepSeek聊天API（保持原样）
 DEEPSEEK_CHAT_API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-98372105524c47e3a3927c716f659b2b")
+
+
+# 在文件开头新增以下代码
+def set_custom_theme():
+    # 自定义CSS样式
+    css="""
+    <style>
+    /* 主色调调整为兽医主题的蓝绿色 */
+    :root {
+        --primary-color: #2E8B57;
+        --secondary-color: #3CB371;
+    }
+
+    /* 标题样式 */
+    h1 {
+        color: var(--primary-color) !important;
+        border-bottom: 3px solid var(--secondary-color);
+        padding-bottom: 0.3em;
+    }
+
+    /* 卡片式阴影效果 */
+    .stPlotlyChart, .stDataFrame, .st-expander {
+        border-radius: 15px !important;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1) !important;
+        padding: 15px !important;
+        background: white !important;
+    }
+
+    /* 按钮美化 */
+    .stButton>button {
+        border-radius: 25px !important;
+        background: linear-gradient(45deg, #2E8B57, #3CB371) !important;
+        color: white !important;
+        border: none !important;
+        transition: transform 0.3s;
+    }
+
+    .stButton>button:hover {
+        transform: scale(1.05);
+    }
+
+    /* 侧边栏美化 */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #F8FFF8 0%, #F0FFF0 100%);
+        border-right: 2px solid var(--primary-color);
+    }
+
+    /* 标签页激活指示 */
+    .stTabs [role="tab"][aria-selected="true"] {
+        border-bottom: 3px solid var(--primary-color) !important;
+        font-weight: 600 !important;
+    }
+
+    @media screen and (max-width: 768px) {
+        /* 卡片元素调整为全宽 */
+        .stPlotlyChart, .stDataFrame {
+            width: 100% !important;
+        }
+
+        /* 隐藏复杂3D可视化 */
+        [data-testid="st3DChart"] {
+            display: none;
+        }
+    }
+    </style>
+    """
+
+    # 页面顶部Banner
+    banner="""
+    <div style="background: linear-gradient(90deg, #2E8B57 0%, #3CB371 100%);
+                padding: 1.5rem;
+                border-radius: 0 0 15px 15px;
+                margin-bottom: 2rem;">
+        <h1 style="color: white !important; 
+                   text-align: center;
+                   font-family: 'Arial';
+                   display: flex;
+                   align-items: center;
+                   justify-content: center;">
+            <img src="https://img.icons8.com/color/48/000000/veterinarian.png" 
+                 style="margin-right: 15px;">
+            AI动物疾病预测系统
+        </h1>
+    </div>
+    """
+    return css, banner
 
 
 class LocalAnalysisModel:
@@ -125,6 +208,14 @@ class AnimalDiseaseAI:
             'restriction': {'cost': 3000, 'effectiveness': 0.8, 'beta_reduction': 0.4}
         }
 
+    def realtime_monitoring(self):
+        """生成实时监控数据"""
+        return {
+            'current_r0': self.params['beta'] / self.params['gamma'],
+            'risk_level': "高危" if (self.env_factors['humidity'] > 75) else "正常",
+            'new_cases': int(self.params['population'] * 0.01 * random.uniform(0.8, 1.2))
+        }
+
     def set_species(self, species):
         """设置当前分析的物种"""
         if species in self.species_params:
@@ -164,11 +255,13 @@ class AnimalDiseaseAI:
         results = []
         total_cost = 0
         total_beta_reduction = 0
+        total_effectiveness = 0
 
         for measure in selected_measures:
             if measure in self.interventions:
                 total_cost += self.interventions[measure]['cost']
                 total_beta_reduction += self.interventions[measure]['beta_reduction']
+                total_effectiveness += self.interventions[measure]['effectiveness']
 
         # 计算效果
         original_r0 = self.params['beta'] / self.params['gamma']
@@ -180,7 +273,8 @@ class AnimalDiseaseAI:
             'total_cost': total_cost,
             'r0_reduction': reduction_percent,
             'new_r0': new_r0,
-            'measures': selected_measures
+            'measures': selected_measures,
+            'total_effectiveness': total_effectiveness / len(selected_measures) if selected_measures else 0
         }
 
     def ai_analysis_with_retry(self, query, max_retries=3):
@@ -246,22 +340,23 @@ class AnimalDiseaseAI:
         return result
 
     def visualize_3d(self, data):
-        """3D可视化传播过程"""
         fig = go.Figure()
         fig.add_trace(go.Scatter3d(
             x=data['Day'],
             y=data['Susceptible'],
             z=data['Infected'],
+            line=dict(width=8, color="#2E8B57"),
+            marker=dict(size=4, color="#3CB371"),
             mode='lines',
-            name='传播路径',
-            line=dict(width=4, color='red')
+            name='传播路径'
         ))
         fig.update_layout(
             scene=dict(
-                xaxis_title='时间(天)',
-                yaxis_title='易感群体',
-                zaxis_title='感染群体'
+                xaxis=dict(gridcolor="#E0E0E0"),
+                yaxis=dict(gridcolor="#E0E0E0"),
+                zaxis=dict(gridcolor="#E0E0E0")
             ),
+            paper_bgcolor="rgba(255,255,255,0.9)",
             title='疾病传播3D可视化'
         )
         return fig
@@ -308,7 +403,7 @@ class AnimalDiseaseAI:
             st.error(f"图像预处理失败: {str(e)}")
             return False
 
-    def analyze_feces(self, img_path):
+    def analyze_feces(self, img_path, water_positive):
         """粪便分析流程（整合禽流感HSV阈值）"""
 
         if not self._preprocess_image(img_path):
@@ -348,13 +443,31 @@ class AnimalDiseaseAI:
             avian_flu_risk = 0.3 * min((40 - h_mean) / 10 + (s_mean - 0.65) / 0.1, 1.0)
 
         # 综合风险公式优化（基于《Poultry Science》研究）
-        total_risk = (
+        feces_risk = (
                 sum(obj["confidence"] * 0.5 for obj in risk_objects) +  # 降低物体检测权重
                 sum(feat["confidence"] * 0.2 for feat in risk_features) +  # 降低分类权重
                 avian_flu_risk +  # 新增禽流感专项风险
                 (0.3 if h_mean < 50 else 0) +  # H值中等风险
                 (0.3 if s_mean > 0.6 else 0)  # S值中等风险
         )
+
+        # 权重分配
+        if water_positive:
+            if feces_risk > 0.55:
+                water_weight = 0.4
+                feces_weight = 0.6
+            elif 0.3 <= feces_risk <= 0.55:
+                water_weight = 0.5
+                feces_weight = 0.5
+            else:
+                water_weight = 0.3
+                feces_weight = 0.7
+        else:
+            water_weight = 0.3
+            feces_weight = 0.7
+
+        water_risk = 1 if water_positive else 0
+        total_risk = feces_risk * feces_weight + water_risk * water_weight
 
         # 动态阈值调整（检测到禽类时降低阈值）
         threshold = 0.6 if any(obj["name"] in ["chicken", "duck"] for obj in risk_objects) else 0.65
@@ -381,6 +494,7 @@ class AnimalDiseaseAI:
         })
 
         self.feces_history.append(analysis)
+        st.session_state.model.feces_history = self.feces_history  # 显式同步
         return analysis
 
     def _generate_advice(self, h, s):
@@ -412,9 +526,39 @@ class AnimalDiseaseAI:
 
 
 def main():
-    st.set_page_config(page_title="AI动物疾病预测系统", layout="wide")
-    st.title("🐾 AI动物疾病预测系统")
-    st.markdown("**创新性结合大模型技术与传统流行病学模型的智能分析平台**")
+    if 'model' not in st.session_state:
+        st.session_state.model = AnimalDiseaseAI()
+        st.session_state.model.feces_history = []  # 显式初始化
+
+    # 从会话状态获取模型实例
+    model = st.session_state.model
+    st.set_page_config(
+        page_title="AI动物疾病预测系统",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    # 应用主题样式
+    css, banner = set_custom_theme()
+    st.markdown(css, unsafe_allow_html=True)
+    st.markdown(banner, unsafe_allow_html=True)
+
+    # 修改主标题部分
+    st.markdown("""
+        <div style="text-align: center; margin: 2rem 0;">
+            <h3 style="color: #2E8B57;">🌱 创新性结合大模型技术与传统流行病学模型</h3>
+            <div style="display: flex; 
+                        justify-content: center; 
+                        gap: 2rem;
+                        margin: 2rem 0;">
+                <img src="https://img.icons8.com/external-flaticons-flat-flat-icons/64/2E8B57/external-veterinary-veterinary-flaticons-flat-flat-icons.png" 
+                     alt="兽医图标" width="60">
+                <img src="https://img.icons8.com/color/64/000000/artificial-intelligence.png" 
+                     alt="AI图标" width="60">
+                  <img src="https://img.icons8.com/external-flaticons-flat-flat-icons/64/2E8B57/external-veterinary-veterinary-flaticons-flat-flat-icons.png" 
+                     alt="兽医图标" width="60">
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # 初始化session状态
     if 'current_query' not in st.session_state:
@@ -428,23 +572,20 @@ def main():
     if 'language' not in st.session_state:
         st.session_state.language = "中文"
 
-    model = AnimalDiseaseAI()
-
     # 侧边栏参数设置
     with st.sidebar:
+        st.markdown("""
+             <div style="text-align: center; padding: 1rem;">
+            <img src="https://img.icons8.com/color/48/000000/veterinarian.png" 
+                 style="margin-bottom: 1rem;">
+            <h4 style="color: #2E8B57;">智慧畜牧健康管理平台</h4>
+            <hr style="border-color: #2E8B57;">
+        </div>
+        """, unsafe_allow_html=True)
         st.header("⚙️ 模型参数设置")
 
-        # 新增多物种选择
-        species = st.selectbox(
-            "选择动物种类",
-            options=list(model.species_params.keys()),
-            format_func=lambda x: {
-                'poultry': '家禽',
-                'swine': '生猪',
-                'cattle': '牛羊'
-            }.get(x, x)
-        )
-        model.set_species(species)
+        # 固定为家禽
+        model.set_species('poultry')
 
         model.params['beta'] = st.slider("感染率 (beta)", 0.01, 1.0, 0.3, 0.01)
         model.params['gamma'] = st.slider("恢复率 (gamma)", 0.01, 0.5, 0.1, 0.01)
@@ -456,14 +597,6 @@ def main():
         model.env_factors['humidity'] = st.slider("湿度 (%)", 10, 100, 60)
         model.env_factors['migration_rate'] = st.slider("迁徙率", 0.0, 0.1, 0.005, 0.001)
 
-        # 自然语言查询
-        st.subheader("AI分析")
-        user_query = st.text_area("输入您的问题或分析需求")
-        if st.button("获取AI分析"):
-            with st.spinner("AI分析中..."):
-                analysis = model.ai_analysis(user_query)
-                st.session_state.analysis_result = analysis if analysis else "分析失败，请重试"
-
         # 新增用户反馈
         st.divider()
         st.subheader("📝 用户反馈")
@@ -473,7 +606,20 @@ def main():
             # 这里可以添加实际反馈提交逻辑
 
     # 主界面标签页
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 传播模拟", "🌐 3D可视化", "💬 智能问答", "🔬 粪便分析", "🛡️ 防控措施"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 传播模拟", "🌐 3D可视化", "💬 智能问答", "🔬 饮水粪便分析", "🛡️ 防控措施"])
+
+    # 在模拟图表中应用新主题色
+    def update_chart_style(fig):
+        fig.update_layout(
+            template="plotly_white",
+            colorway=["#2E8B57", "#3CB371", "#98FB98"],
+            hoverlabel=dict(
+                bgcolor="#2E8B57",
+                font_size=14,
+                font_family="Arial"
+            )
+        )
+        return fig
 
     with tab1:
         st.subheader("传播动态模拟")
@@ -481,8 +627,8 @@ def main():
         data = model.generate_simulation(simulation_days)
 
         fig = px.line(data, x='Day', y=['Susceptible', 'Infected', 'Recovered'],
-                      title="疾病传播趋势预测", labels={'value': '人数'})
-        st.plotly_chart(fig, use_container_width=True)
+                      title="疾病传播趋势预测", labels={'value': '家禽数'})
+        st.plotly_chart(update_chart_style(fig), use_container_width=True)
 
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -508,16 +654,6 @@ def main():
         st.subheader("三维传播模型")
         st.plotly_chart(model.visualize_3d(data), use_container_width=True)
 
-        with st.expander("地理传播模拟"):
-            # 模拟疫情地点数据
-            locations = [
-                {'name': '北京', 'lat': 39.9, 'lng': 116.4, 'cases': 120},
-                {'name': '上海', 'lat': 31.2, 'lng': 121.5, 'cases': 80},
-                {'name': '广州', 'lat': 23.1, 'lng': 113.3, 'cases': 150}
-            ]
-            outbreak_map = model.create_outbreak_map(locations)
-           
-
     with tab3:
         st.subheader("智能分析问答")
         query = st.text_input("请输入您的问题：",
@@ -539,9 +675,26 @@ def main():
                         st.session_state.current_query = temp
                         st.rerun()
 
+        # 在智能问答部分添加
+        with st.expander("💡 专家建议", expanded=True):
+            st.markdown("""
+            <div style="background: #F8FFF8;
+                        padding: 1.5rem;
+                        border-radius: 15px;
+                        border: 2px solid #2E8B57;">
+                <h4 style="color: #2E8B57;">📌 诊断建议</h4>
+                <ul style="color: #555;">
+                    <li>使用高分辨率图像可获得更准确结果</li>
+                    <li>环境参数建议每6小时更新一次</li>
+                    <li>推荐同时进行水质和粪便检测</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+
         if st.button("🚀 提交问题") or query:
             if query:
-                with st.spinner("🔍 正在分析中..."):
+                with st.spinner("🔍 深度分析中..."):
+
                     result = model.ai_analysis(query)
                     st.session_state.analysis_result = result or "分析失败，请检查网络连接或重试"
 
@@ -570,7 +723,7 @@ def main():
                 st.rerun()
 
     with tab4:
-        st.header("禽类粪便智能分析（本地模型版）")
+        st.header("禽类饮水粪便智能分析（本地模型版）")
         col1, col2 = st.columns([2, 3])
 
         with col1:
@@ -583,14 +736,17 @@ def main():
             else:
                 img_file = st.camera_input("拍摄粪便照片")
 
+            water_positive = st.checkbox("饮水检测结果为阳性")
+
             if img_file:
                 temp_path = f"temp_{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"
                 with open(temp_path, "wb") as f:
                     f.write(img_file.getbuffer())
 
                 if st.button("开始分析", type="primary", key='analyze_btn'):
-                    with st.spinner("深度分析中..."):
-                        result = model.analyze_feces(temp_path)
+                    with st.spinner("🔍 深度分析中..."):
+
+                        result = model.analyze_feces(temp_path, water_positive)
                         st.session_state.current_analysis = result
                         try:
                             os.remove(temp_path)
@@ -604,20 +760,19 @@ def main():
 
                 # 风险仪表盘
                 risk_color = "#FF4B4B" if result["risk_level"] == "高风险" else "#00C853"
-                fig = go.Figure(go.Indicator(
+                gauge_fig = go.Figure(go.Indicator(
                     mode="gauge+number",
                     value=result["probability"] * 100,
                     domain={'x': [0, 1], 'y': [0, 1]},
                     gauge={
-                        'axis': {'range': [0, 100]},
+                        'axis': {'tickcolor': "#2E8B57"},
                         'bar': {'color': risk_color},
-                        'steps': [
-                            {'range': [0, 65], 'color': "#E8F5E9"},
-                            {'range': [65, 100], 'color': "#FFCDD2"}
-                        ]
+                        'bgcolor': "rgba(255,255,255,0.7)",
+                        'borderwidth': 2,
+                        'bordercolor': "#2E8B57"
                     }
                 ))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(gauge_fig, use_container_width=True)
 
                 # 详细指标
                 with st.expander("📊 详细分析数据"):
@@ -647,8 +802,8 @@ def main():
 
                 # 历史记录（保留，但隐藏空数据）
                 st.subheader("📜 分析历史")
-                if model.feces_history:
-                    hist_df = pd.DataFrame(model.feces_history)
+                if st.session_state.model.feces_history:
+                    hist_df = pd.DataFrame(st.session_state.model.feces_history)
                     hist_df["probability"] = hist_df["probability"] * 100
                     st.dataframe(
                         hist_df[["timestamp", "risk_level", "probability"]],
@@ -709,19 +864,11 @@ def main():
 
             # 显示结果
             st.subheader("分析结果")
-            cols = st.columns(3)
-            cols[0].metric("总成本", f"¥{evaluation['total_cost']:,}")
-            cols[1].metric("R0降低", f"{evaluation['r0_reduction']:.1f}%")
-            cols[2].metric("新R0值", f"{evaluation['new_r0']:.2f}")
-
-            # 成本效益可视化
-            fig = px.bar(
-                x=[m.capitalize() for m in selected],
-                y=[model.interventions[m]['effectiveness'] * 100 for m in selected],
-                labels={'x': '措施', 'y': '有效性(%)'},
-                title="防控措施有效性对比"
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("总成本", f"¥{evaluation['total_cost']:,}")
+            col2.metric("R0降低", f"{evaluation['r0_reduction']:.1f}%")
+            col3.metric("新R0值", f"{evaluation['new_r0']:.2f}")
+            col4.metric("平均有效性", f"{evaluation['total_effectiveness'] * 100:.1f}%")
 
             # 模拟比较
             st.subheader("措施前后对比")
@@ -748,9 +895,9 @@ def main():
                 line=dict(color='green')
             ))
             fig.update_layout(
-                title="感染人数变化对比",
+                title="感染家禽数变化对比",
                 xaxis_title="天数",
-                yaxis_title="感染人数"
+                yaxis_title="感染家禽数"
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
